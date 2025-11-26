@@ -1,0 +1,40 @@
+{
+  "symbol": "BTCUSDT",
+  "quote_asset": "USDT",
+  "use_testnet": true,
+  "poll_interval_seconds": 10,
+  "target_balance": 1000000.0,
+  "cancel_open_orders_on_start": true,
+  "base_risk_frac": 0.25,
+  "min_profit_pct_net": 0.1,
+  "extra_fee_safety_bps": 10,
+  "bandit": {
+    "min_pct_range": [
+      0.03,
+      0.1
+    ],
+    "max_pct_range": [
+      0.1,
+      0.14
+    ],
+    "num_configs": 5,
+    "exploration_eps": 0.25,
+    "switch_every_trades": 8,
+    "switch_every_minutes": 30
+  },
+  "arbitrage": {
+    "enabled": false,
+    "secondary_exchange": "okx",
+    "min_edge_pct_net": 0.3,
+    "paper": true
+  },
+  "mode": "LIVE",
+  "grid": {
+    "enabled": true,
+    "buy_levels": 1,
+    "sell_levels": 1,
+    "spacing_pct": 0.03,
+    "rearm_threshold_pct": 0.015,
+    "order_ttl_seconds": 1800
+  }
+}

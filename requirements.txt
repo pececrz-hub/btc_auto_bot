@@ -1,0 +1,5 @@
+python-binance==1.0.19
+ccxt==4.4.23
+python-dotenv==1.0.1
+pydantic==2.9.2
+tenacity==9.0.0
