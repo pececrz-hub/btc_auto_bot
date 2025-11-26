@@ -28,13 +28,28 @@ class BinanceWrapper:
             if any(s in msg for s in ["timeout", "too many requests", "connection", "temporarily"]):
                 raise TransientError(e)
             raise
+    # ---- helpers ----
     def _decimals_from_step(s: str) -> int:
         d = Decimal(str(s)).normalize()
         return -d.as_tuple().exponent if d.as_tuple().exponent < 0 else 0
 
     def _fmt_dec(x, places: int) -> str:
         q = Decimal(str(x)).quantize(Decimal(1).scaleb(-places), rounding=ROUND_DOWN)
-        return format(q, 'f')  # evita 'e-05'
+        return format(q, 'f')  # evita notação científica
+
+    def _mk_cid(prefix: str) -> str:
+        # BINANCE: máx 36 chars; só letras/números/_-
+        base = f"{prefix}_{int(time.time())}"
+        safe = ''.join(ch if ch.isalnum() or ch in "_-" else "_" for ch in base)
+        return safe[:36]
+
+    def _post_quant_checks(qty: Decimal, price: Decimal, f: dict) -> bool:
+        # qty >= min_qty E qty*price >= min_notional
+        if qty < Decimal(str(f["min_qty"])):
+            return False
+        if (qty * price) < Decimal(str(f["min_notional"])):
+            return False
+        return True
         
     def validate_api(self) -> (bool, str):
         """Tenta um endpoint assinado p/ validar chave/permissões."""
@@ -124,27 +139,37 @@ class BinanceWrapper:
     def quantize_tick(self, price: Decimal, tick: Decimal) -> Decimal:
         return (price // tick) * tick
 
+ # ---- envio centralizado ----
     def order_limit_maker(self, symbol, side, quantity, price, client_order_id=None):
-        # pega precisões do símbolo
-        f = self.get_symbol_filters(symbol)  # seu wrapper já tem isso
+        f = self.get_symbol_filters(symbol)
         q_places = _decimals_from_step(f["step_size"])
         p_places = _decimals_from_step(f["tick_size"])
 
-        qty_str = _fmt_dec(quantity, q_places)
-        price_str = _fmt_dec(price, p_places)
+        # força Decimal -> quantiza pra baixo -> string
+        qd = Decimal(str(quantity))
+        pd = Decimal(str(price))
+        qd = qd.quantize(Decimal(1).scaleb(-q_places), rounding=ROUND_DOWN)
+        pd = pd.quantize(Decimal(1).scaleb(-p_places), rounding=ROUND_DOWN)
 
+        if not _post_quant_checks(qd, pd, f):
+            raise ValueError("Fails filters after quantize (minQty/minNotional)")
+
+        qty_str  = format(qd, 'f')
+        price_str = format(pd, 'f')
+
+        cid = client_order_id or _mk_cid(f"{side}_LM")
         params = dict(
-            symbol=symbol,
-            side=side,
-            type="LIMIT_MAKER",
-            timeInForce="GTC",
-            quantity=qty_str,
-            price=price_str,
+            symbol=symbol, side=side, type="LIMIT_MAKER", timeInForce="GTC",
+            quantity=qty_str, price=price_str, newClientOrderId=cid
         )
-        if client_order_id:
-            params["newClientOrderId"] = client_order_id
-        return self._safe_call(self.client.create_order, **params)
-
+        try:
+            return self._safe_call(self.client.create_order, **params)
+        except BinanceAPIException as e:
+            # -2010: “Order would immediately match and take” (maker viraria taker) → apenas rearmar no loop
+            if getattr(e, "code", None) == -2010:
+                print("[Maker] Rejeitado: viraria taker. Vou rearmar no próximo ciclo.")
+                return {}
+            raise
 
     def order_market(self, symbol: str, side: str, quantity: float, client_order_id: Optional[str] = None):
         params = {
