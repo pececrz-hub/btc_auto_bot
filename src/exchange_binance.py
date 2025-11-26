@@ -1,6 +1,6 @@
 from binance.client import Client
 from binance.enums import *
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from typing import Optional
 from binance.exceptions import BinanceAPIException
