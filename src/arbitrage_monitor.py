@@ -1,4 +1,3 @@
-\
 """
 Monitor de arbitragem simples via CCXT (opcional).
 Não move fundos entre exchanges; a ideia é detectar edges para execução com saldos pré-alocados.

@@ -1,4 +1,3 @@
-\
 from pydantic import BaseModel, Field, ValidationError
 from typing import Tuple, List, Literal
 import json, os
