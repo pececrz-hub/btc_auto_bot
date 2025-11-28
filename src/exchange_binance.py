@@ -168,7 +168,7 @@ class BinanceWrapper:
             "symbol": symbol,
             "side": side,
             "type": "LIMIT_MAKER",
-            "timeInForce": "GTC",
+           # "timeInForce": "GTC",
             "quantity": qty_str,
             "price": price_str,
         }
