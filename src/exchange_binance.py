@@ -1,6 +1,7 @@
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 from decimal import Decimal, ROUND_DOWN
+import secrets
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from typing import Optional, Tuple, Dict, Any
 import time
@@ -31,8 +32,7 @@ class BinanceWrapper:
 
     @staticmethod
     def _mk_cid(prefix: str) -> str:
-        # Máx 36 chars; letras/números/_-
-        base = f"{prefix}_{int(time.time())}"
+        base = f"{prefix}_{time.time_ns()}_{secrets.token_hex(3)}"  # ex.: SELL_LM_..._a1b2c3
         safe = "".join(ch if ch.isalnum() or ch in "_-" else "_" for ch in base)
         return safe[:36]
 

@@ -13,6 +13,13 @@ BOT_TAG = "BTCBOT10PCT"
 
 def now_ts() -> int:
     return int(time.time())
+def calc_sell_target(ex, cfg, buy_price: float) -> tuple[float, float]:
+    fees = ex.get_trade_fees(cfg.symbol)
+    maker_fee = max(fees.get("maker", 0.001), 0.0)      # 0.1% fallback
+    safety = (getattr(cfg, "extra_fee_safety_bps", 0) or 0) / 10000.0
+    net = getattr(cfg, "min_profit_pct_net", 0.006)     # 0.6% fallback
+    target = buy_price * (1 + net + 2*maker_fee + safety)
+    return target, net
 
 def trades_needed_compound(current: float, target: float, net_rate: float) -> int:
     """Retorna o número de trades com ganho líquido fixo (composto) até atingir target.
@@ -98,22 +105,48 @@ def main():
                 free_base_now = ex.get_asset_balance(base_asset)
                 qty_resume = min(resume["qty"], float(free_base_now))
                 qty_resume = float(ex.quantize_step(Decimal(str(qty_resume)), filters["step_size"]))
+
                 if qty_resume >= float(filters["min_qty"]):
                     # Marca posição “LONG” internamente
                     strat.on_buy_executed(resume["entry_price"], qty_resume, fee=0.0)
-                    # Arma SELL no alvo líquido mínimo
-                    sell_target = strat.target_sell_for_net(resume["entry_price"], strat.cfg.min_profit_pct_net, maker_on_both=True)
-                    qprice = ex.quantize_tick(Decimal(str(sell_target)), filters["tick_size"])
-                    if cfg.mode == "LIVE":
-                        client_id = f"{BOT_TAG}_RESUME_SELL_{now_ts()}"
-                        ex.order_limit_maker(cfg.symbol, "SELL", qty_resume, float(qprice), client_order_id=client_id)
-                        print(f"[RESUME] SELL LIMIT_MAKER armado: qty={qty_resume} price={qprice}")
+
+                    # --- alvo de venda usando config + taxas (lucro líquido) ---
+                    fees = ex.get_trade_fees(cfg.symbol)
+                    maker_fee = max(fees.get("maker", 0.001), 0.0)                  # 0.1% fallback
+                    safety    = (getattr(cfg, "extra_fee_safety_bps", 0) or 0) / 10000.0
+                    net       = getattr(cfg, "min_profit_pct_net", 0.006)           # 0.6% fallback
+
+                    sell_target = resume["entry_price"] * (1 + net + 2*maker_fee + safety)
+
+                    # Quantiza preço pelo tick e valida minNotional depois do arredondamento
+                    qprice_dec = ex.quantize_tick(Decimal(str(sell_target)), filters["tick_size"])
+                    qty_dec    = Decimal(str(qty_resume))
+
+                    def _arma_sell(qty_f: float, price_f: float):
+                        if cfg.mode == "LIVE":
+                            client_id = f"{BOT_TAG}_RESUME_SELL_{now_ts()}"
+                            ex.order_limit_maker(cfg.symbol, "SELL", qty_f, price_f, client_order_id=client_id)
+                            print(f"[RESUME] SELL LIMIT_MAKER armado: qty={qty_f} price={price_f}")
+                        else:
+                            print(f"[RESUME][PAPER] posição restaurada; alvo de venda em {price_f}")
+
+                    if qty_dec * qprice_dec < filters["min_notional"]:
+                        # ajusta qty para múltiplo de min_qty
+                        min_qty = filters["min_qty"]
+                        qty_dec = (qty_dec // min_qty) * min_qty
+                        if qty_dec == 0 or qty_dec * qprice_dec < filters["min_notional"]:
+                            print("[RESUME] qty*price < minNotional; não vou armar SELL agora.")
+                        else:
+                            _arma_sell(float(qty_dec), float(qprice_dec))
                     else:
-                        print(f"[RESUME][PAPER] posição restaurada; alvo de venda em {qprice}")
+                        _arma_sell(float(qty_dec), float(qprice_dec))
+
+                    print(f"HOLD_LONG | alvo venda p/ lucro líquido >= {net*100:.2f}% | target={float(qprice_dec):.2f} | price={spot_price}")
                 else:
                     print("[RESUME] Sem BTC suficiente para retomar posição; ignorando.")
     except Exception as e:
         print("[RESUME] Falha ao retomar posição:", e)
+
     # ---------------------------------
     trades_since_switch = 0
     last_switch_ts = now_ts()
