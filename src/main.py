@@ -176,33 +176,14 @@ def main():
             # ========================
             # BUY logic (maker) + rearm
             # ========================
-        if state == "WANT_BUY" and strat.position.side == "NONE":
-            free_quote = ex.get_asset_balance(cfg.quote_asset)
-
-            # notional bruto desejado
-            notional = Decimal(str(free_quote)) * Decimal(str(active_cfg["trade_qty_frac"]))
-            min_notional = filters["min_notional"]
-
-            # se nem o bruto bate o mínimo, já evita erro -1013
-            if notional < min_notional:
-                print(f"[WARN] notional={float(notional):.4f} < min_notional={float(min_notional):.4f} "
-                    f"(free_quote={free_quote}, frac={active_cfg['trade_qty_frac']})")
-            else:
-                # calcula qty em BTC e aplica stepSize
-                qty = Decimal(str(notional)) / Decimal(str(buy_price))
-                qty = ex.quantize_step(qty, filters["step_size"])
-
-                if qty >= filters["min_qty"]:
-                    # preço quantizado no tickSize
-                    qprice = ex.quantize_tick(Decimal(str(buy_price)), filters["tick_size"])
-
-                    # notional final da ordem depois de todos os arredondamentos
-                    order_notional = qty * qprice
-
-                    if order_notional < min_notional:
-                        print(f"[WARN] order_notional={float(order_notional):.4f} < min_notional={float(min_notional):.4f} "
-                            f"(qty={float(qty):.8f}, price={float(qprice):.2f})")
-                    else:
+            if state == "WANT_BUY" and strat.position.side == "NONE":
+                free_quote = ex.get_asset_balance(cfg.quote_asset)
+                notional = Decimal(str(free_quote)) * Decimal(str(active_cfg["trade_qty_frac"]))
+                if notional >= filters["min_notional"]:
+                    qty = (Decimal(str(notional)) / Decimal(str(buy_price)))
+                    qty = ex.quantize_step(qty, filters["step_size"])
+                    if qty >= filters["min_qty"]:
+                        qprice = ex.quantize_tick(Decimal(str(buy_price)), filters["tick_size"])
                         if cfg.mode == "LIVE":
                             need_place = True
                             if open_buy_cid:
@@ -331,6 +312,12 @@ def main():
 
             time.sleep(cfg.poll_interval_seconds)
 
+        except KeyboardInterrupt:
+            print("Encerrado pelo usuário.")
+            break
+        except Exception as e:
+            print("Erro no loop:", e)
+            time.sleep(5)
 
 if __name__ == "__main__":
     main()
