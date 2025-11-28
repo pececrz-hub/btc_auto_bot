@@ -143,18 +143,27 @@ def main():
             if resume:
                 free_base_now = ex.get_asset_balance(base_asset)
                 qty_resume = min(resume["qty"], float(free_base_now))
-                qty_resume = float(ex.quantize_step(Decimal(str(qty_resume)), filters["step_size"]))
-                if qty_resume >= float(filters["min_qty"]):
-                    sell_target, eff_tp = calc_sell_target(ex, cfg, resume["entry_price"])
-                    qprice_dec = ex.quantize_tick(Decimal(str(sell_target)), filters["tick_size"])
-                    lot_id = insert_lot(resume["entry_price"], qty_resume, float(qprice_dec))
-                    ok, msg = try_arm_sell_for_lot(ex, cfg, filters, lot_id, qty_resume, float(qprice_dec))
-                    if ok:
-                        print(f"HOLD_LONG | alvo venda líquido >= {eff_tp*100:.2f}% | target={float(qprice_dec):.2f} | price={price:.2f}")
+                qty_resume = float(qty_resume)  # deixa acumular mesmo se < min_qty
+
+                sell_target, eff_tp = calc_sell_target(ex, cfg, resume["entry_price"])
+                qprice_dec = ex.quantize_tick(Decimal(str(sell_target)), filters["tick_size"])
+
+                # acumula/mescla no lote aberto
+                from src.db import upsert_accum_lot
+                lot_id, new_bp, new_qty = upsert_accum_lot(resume["entry_price"], qty_resume, float(qprice_dec))
+                print(f"[RESUME] lote #{lot_id} acumulado: qty={new_qty:.8f} avg_buy={new_bp:.2f}")
+
+                # tenta armar SELL (se ainda não atingir minNotional/minQty, a função retorna False e segue acumulando)
+                ok, msg = try_arm_sell_for_lot(ex, cfg, filters, lot_id, new_qty, float(qprice_dec))
+                if ok:
+                    print(f"HOLD_LONG | alvo venda líquido >= {eff_tp*100:.2f}% | target={float(qprice_dec):.2f} | price={price:.2f}")
                 else:
-                    print("[RESUME] Sem BTC suficiente p/ retomar posição; ignorando.")
+                    print(f"[RESUME] aguardando mínimo p/ SELL (motivo: {msg})")
+            else:
+                print("[RESUME] nenhuma posição registrada no trades.db")
     except Exception as e:
         print("[RESUME] Falha ao retomar posição:", e)
+
 
     print(f"Bot rodando. Modo: {cfg.mode}")
 
@@ -219,11 +228,15 @@ def main():
                         fill_qty = float(qty)
 
                         # cria lote e arma SELL (TP líquido cfg)
+                       # cria/mescla lote e tenta armar SELL
                         sell_target, eff_tp = calc_sell_target(ex, cfg, fill_price)
-                        lot_id = insert_lot(float(fill_price), float(fill_qty), float(sell_target))
-                        ok, msg = try_arm_sell_for_lot(ex, cfg, filters, lot_id, float(fill_qty), float(sell_target))
+                        from src.db import upsert_accum_lot
+                        lot_id, new_bp, new_qty = upsert_accum_lot(float(fill_price), float(fill_qty), float(sell_target))
+                        ok, msg = try_arm_sell_for_lot(ex, cfg, filters, lot_id, float(new_qty), float(sell_target))
                         if ok:
                             print(f"[BUY] qty={format(qty,'f')} @~{fill_price:.2f} → [LOT#{lot_id}] SELL alvo {sell_target:.2f}")
+                        else:
+                            print(f"[BUY] qty={format(qty,'f')} @~{fill_price:.2f} → [LOT#{lot_id}] aguardando mínimo p/ SELL ({msg})")
                         # atualiza referência após compra para evitar avalanche
                         ref_price = price
                     else:

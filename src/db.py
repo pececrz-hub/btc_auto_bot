@@ -211,3 +211,37 @@ def get_open_lots():
     """)
     cols = [c[0] for c in cur.description]
     return [dict(zip(cols, r)) for r in cur.fetchall()]
+def upsert_accum_lot(buy_price: float, qty: float, target_price: float):
+    """
+    Junta a compra em um lote OPEN sem ordem de venda (acumulador).
+    Se não existir, cria. Retorna (lot_id, new_buy_price, new_qty).
+    """
+    conn = get_conn()
+    _ensure_lots_schema(conn)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, buy_price, qty_remaining
+        FROM lots
+        WHERE status='OPEN' AND (sell_client_id IS NULL OR sell_client_id='')
+        LIMIT 1
+    """)
+    row = cur.fetchone()
+    if row:
+        lot_id, bp, q = row
+        new_qty = float(q) + float(qty)
+        if new_qty <= 0:
+            new_qty = 0.0
+        new_bp = (float(bp) * float(q) + float(buy_price) * float(qty)) / new_qty if new_qty > 0 else float(buy_price)
+        cur.execute(
+            "UPDATE lots SET buy_price=?, qty_remaining=?, target_price=?, updated_ts=CURRENT_TIMESTAMP WHERE id=?",
+            (new_bp, new_qty, target_price, lot_id),
+        )
+        conn.commit()
+        return lot_id, new_bp, new_qty
+    else:
+        cur.execute(
+            "INSERT INTO lots(buy_price, qty_remaining, target_price, status) VALUES (?,?,?,'OPEN')",
+            (buy_price, qty, target_price),
+        )
+        conn.commit()
+        return cur.lastrowid, float(buy_price), float(qty)
