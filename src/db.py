@@ -152,3 +152,62 @@ def get_open_position_from_trades():
         return {"entry_price": float(entry_price), "qty": float(qty)}
     finally:
         conn.close()
+# ================= Lotes (grid/TP por lote) =================
+
+def _ensure_lots_schema(conn):
+    cur = conn.cursor()
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS lots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      buy_price REAL NOT NULL,
+      qty_remaining REAL NOT NULL,
+      target_price REAL NOT NULL,
+      sell_client_id TEXT,
+      status TEXT NOT NULL DEFAULT 'OPEN', -- OPEN | SELL_PLACED | CLOSED
+      created_ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_lots_status ON lots(status);")
+    conn.commit()
+
+def insert_lot(buy_price: float, qty: float, target_price: float) -> int:
+    conn = get_conn()
+    _ensure_lots_schema(conn)
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO lots(buy_price, qty_remaining, target_price, status) VALUES (?,?,?,'OPEN')",
+        (buy_price, qty, target_price),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+def set_lot_sell(lot_id: int, client_id: str, price: float) -> None:
+    conn = get_conn()
+    _ensure_lots_schema(conn)
+    conn.execute(
+        "UPDATE lots SET sell_client_id=?, target_price=?, status='SELL_PLACED', updated_ts=CURRENT_TIMESTAMP WHERE id=?",
+        (client_id, price, lot_id),
+    )
+    conn.commit()
+
+def close_lot(lot_id: int) -> None:
+    conn = get_conn()
+    _ensure_lots_schema(conn)
+    conn.execute(
+        "UPDATE lots SET status='CLOSED', updated_ts=CURRENT_TIMESTAMP WHERE id=?",
+        (lot_id,),
+    )
+    conn.commit()
+
+def get_open_lots():
+    conn = get_conn()
+    _ensure_lots_schema(conn)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, buy_price, qty_remaining, target_price, sell_client_id, status
+        FROM lots
+        WHERE status IN ('OPEN','SELL_PLACED')
+    """)
+    cols = [c[0] for c in cur.description]
+    return [dict(zip(cols, r)) for r in cur.fetchall()]
