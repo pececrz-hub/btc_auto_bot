@@ -212,12 +212,21 @@ def main():
                             if need_place:
                                 client_id = f"{BOT_TAG}_BUY_{now_ts()}"
                                 if cfg.mode == "LIVE":
-                                    order = ex.order_limit_maker(cfg.symbol, "BUY", float(qty), float(qprice), client_order_id=client_id)
+                                    # passa Decimal direto pro wrapper
+                                    order = ex.order_limit_maker(cfg.symbol, "BUY", qty, qprice, client_order_id=client_id)
                                     open_buy_id = order.get("orderId")
                                     open_buy_cid = client_id
                                     open_buy_price = float(qprice)
                                     open_buy_ts = now_ts()
                                     print(f"BUY LIMIT_MAKER: qty={qty} price={qprice} id={open_buy_id}")
+                                # client_id = f"{BOT_TAG}_BUY_{now_ts()}"
+                                # if cfg.mode == "LIVE":
+                                #     order = ex.order_limit_maker(cfg.symbol, "BUY", float(qty), float(qprice), client_order_id=client_id)
+                                #     open_buy_id = order.get("orderId")
+                                #     open_buy_cid = client_id
+                                #     open_buy_price = float(qprice)
+                                #     open_buy_ts = now_ts()
+                                #     print(f"BUY LIMIT_MAKER: qty={qty} price={qprice} id={open_buy_id}")
                         else:
                             exec_price = float(qprice)
                             fee = exec_price * float(qty) * fees["maker"]

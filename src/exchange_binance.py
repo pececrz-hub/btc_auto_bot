@@ -139,43 +139,49 @@ class BinanceWrapper:
         return (price // tick) * tick
 
  # ---- envio centralizado ----
-    def order_limit_maker(self, symbol, side, quantity, price, client_order_id=None):
+    def order_limit_maker(self, symbol: str, side: str, quantity, price, client_order_id: Optional[str] = None):
+        # converte para Decimal e aplica filtros de step/tick
         f = self.get_symbol_filters(symbol)
-        q_places = self._decimals_from_step(f["step_size"])
-        p_places = self._decimals_from_step(f["tick_size"])
+        step = f["step_size"]
+        tick = f["tick_size"]
 
-        qd = Decimal(str(quantity)).quantize(Decimal(1).scaleb(-q_places), rounding=ROUND_DOWN)
-        pd = Decimal(str(price)).quantize(Decimal(1).scaleb(-p_places),  rounding=ROUND_DOWN)
+        qd = self.quantize_step(Decimal(str(quantity)), step)
+        pd = self.quantize_tick(Decimal(str(price)), tick)
 
-        if not self._post_quant_checks(qd, pd, f):
-            raise ValueError("Fails filters after quantize (minQty/minNotional)")
+        qty_str = format(qd, "f")     # ex: '0.00008' (sem notação científica)
+        price_str = format(pd, "f")   # ex: '87691.08000000'
 
-        params = dict(
-            symbol=symbol, side=side, type="LIMIT_MAKER", timeInForce="GTC",
-            quantity=format(qd, 'f'), price=format(pd, 'f'),
-            newClientOrderId=(client_order_id or self._mk_cid(f"{side}_LM"))
-        )
-        try:
-            return self._safe_call(self.client.create_order, **params)
-        except BinanceAPIException as e:
-            if getattr(e, "code", None) == -2010:
-                print("[Maker] Rejeitado: viraria taker. Rearmo no próximo ciclo.")
-                return {}
-            raise
-
-    def order_market(self, symbol: str, side: str, quantity: float, client_order_id: Optional[str] = None):
-        f = self.get_symbol_filters(symbol)
-        q_places = self._decimals_from_step(f["step_size"])
-        qd = Decimal(str(quantity)).quantize(Decimal(1).scaleb(-q_places), rounding=ROUND_DOWN)
-        if not self._post_quant_checks(qd, Decimal("0"), {"min_qty": f["min_qty"], "min_notional": Decimal("0")}):
-            raise ValueError("Market qty abaixo do minQty")
         params = {
-            "symbol": symbol, "side": side, "type": ORDER_TYPE_MARKET,
-            "quantity": format(qd, 'f')
+            "symbol": symbol,
+            "side": side,
+            "type": ORDER_TYPE_LIMIT_MAKER,
+            "quantity": qty_str,
+            "price": price_str,
         }
         if client_order_id:
             params["newClientOrderId"] = client_order_id
+
         return self._safe_call(self.client.create_order, **params)
+
+
+    def order_market(self, symbol: str, side: str, quantity, client_order_id: Optional[str] = None):
+        f = self.get_symbol_filters(symbol)
+        step = f["step_size"]
+
+        qd = self.quantize_step(Decimal(str(quantity)), step)
+        qty_str = format(qd, "f")
+
+        params = {
+            "symbol": symbol,
+            "side": side,
+            "type": ORDER_TYPE_MARKET,
+            "quantity": qty_str,
+        }
+        if client_order_id:
+            params["newClientOrderId"] = client_order_id
+
+        return self._safe_call(self.client.create_order, **params)
+
 
 
     def get_order(self, symbol: str, order_id: int = None, client_order_id: str = None):
