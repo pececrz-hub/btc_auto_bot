@@ -1,3 +1,4 @@
+\
 from pydantic import BaseModel, Field, ValidationError
 from typing import Tuple, List, Literal
 import json, os
@@ -45,10 +46,10 @@ class AppCfg(BaseModel):
     grid: GridCfg = GridCfg()
     arbitrage: ArbitrageCfg = ArbitrageCfg()
     mode: Literal["LIVE", "PAPER"] = "LIVE"
+    resume_on_start: bool = True
 
 def load_config(config_path: str = "config.json") -> AppCfg:
     load_dotenv(override=True)
-    config_path = config_path or os.getenv("CONFIG_PATH", "config.json")
     if not os.path.exists(config_path):
         raise FileNotFoundError("Crie config.json a partir de config.json.example")
     with open(config_path, "r", encoding="utf-8") as f:

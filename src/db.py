@@ -1,12 +1,18 @@
+import os
+\
 import sqlite3
 from datetime import datetime
 from typing import Optional, Tuple, List, Dict
-import os
-DB_PATH = os.getenv("TRADES_DB_PATH", "trades.db")
 
+DB_PATH = os.getenv('TRADES_DB_PATH', '/data/trades.db')
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
+    d = os.path.dirname(DB_PATH)
+    if d:
+        os.makedirs(d, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
+    conn.execute('PRAGMA journal_mode=WAL')
+    conn.execute('PRAGMA busy_timeout=5000')
     # schema (idempotente)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS trades (

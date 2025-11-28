@@ -1,41 +1,8 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-*.so
-*.egg-info/
-dist/
-build/
-.cache/
-.python-version
-
-# Virtual env
-.venv/
-venv/
-ENV/
-
-# IDE/OS
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-
-# Logs e dados locais
-*.log
-trades.db
-*.sqlite
-data/
-data/**
-
-# Docker
-docker-compose.override.yml
-
-# Segredos
 .env
-.env.*
-!.env.example
-
-# Config local (versone só o exemplo)
-config.json
+*.env
+/data/*
 !config.json.example
+*.db*
+__pycache__/
+*.pyc
+.DS_Store

@@ -2,26 +2,12 @@ import time
 import math
 from decimal import Decimal
 from datetime import datetime
-import os
-import urllib.request
+
 from src.config import load_config, load_secrets
 from src.db import get_last_balance, insert_trade, get_stats
 from src.ai_bandit import ParamManager
 from src.exchange_binance import BinanceWrapper
 from src.strategy_percent import PercentStrategy, StrategyConfig
-def _mask(k: str, show: int = 4) -> str:
-    if not k:
-        return ""
-    return f"{k[:3]}...{k[-show:]}"
-
-def _public_ips():
-    def get(url):
-        try:
-            return urllib.request.urlopen(url, timeout=3).read().decode().strip()
-        except Exception:
-            return None
-    return get("https://api.ipify.org"), get("https://api6.ipify.org")
-
 
 BOT_TAG = "BTCBOT10PCT"
 
@@ -40,27 +26,6 @@ def trades_needed_compound(current: float, target: float, net_rate: float) -> in
 def main():
     cfg = load_config()
     api_key, api_secret = load_secrets()
-    
-    # ---- Diagnóstico inicial (antes de chamar qualquer endpoint assinado) ----
-    ipv4, ipv6 = _public_ips()
-    print("=== Startup diagnostics ===")
-    print(f"[Diag] CONFIG_PATH={os.getenv('CONFIG_PATH','config.json')}  DB={os.getenv('TRADES_DB_PATH','trades.db')}")
-    print(f"[Diag] use_testnet={cfg.use_testnet}")
-
-    ex = BinanceWrapper(api_key, api_secret, use_testnet=cfg.use_testnet)
-    print(f"[Diag] endpoint={getattr(ex.client, 'API_URL', 'https://api.binance.com/api')}")
-    print(f"[Diag] IPv4 egress={ipv4 or 'N/A'}  IPv6 egress={ipv6 or 'N/A'}")
-    print(f"[Diag] API key len={len(api_key or '')}  mask={_mask(api_key)}")
-
-    ok, why = ex.validate_api()
-    if not ok:
-        print("[Diag] API INVALIDA:", why)
-        if ipv4:
-            print(f"[Diag] Dica whitelist: inclua {ipv4} (e IPv6: {ipv6}) na Binance.")
-        return
-    print("[Diag] Binance API OK")
-    # ---- Fim diagnóstico ----
-    
 
     ex = BinanceWrapper(api_key, api_secret, use_testnet=cfg.use_testnet)
     filters = ex.get_symbol_filters(cfg.symbol)
@@ -212,21 +177,12 @@ def main():
                             if need_place:
                                 client_id = f"{BOT_TAG}_BUY_{now_ts()}"
                                 if cfg.mode == "LIVE":
-                                    # passa Decimal direto pro wrapper
-                                    order = ex.order_limit_maker(cfg.symbol, "BUY", qty, qprice, client_order_id=client_id)
+                                    order = ex.order_limit_maker(cfg.symbol, "BUY", float(qty), float(qprice), client_order_id=client_id)
                                     open_buy_id = order.get("orderId")
                                     open_buy_cid = client_id
                                     open_buy_price = float(qprice)
                                     open_buy_ts = now_ts()
                                     print(f"BUY LIMIT_MAKER: qty={qty} price={qprice} id={open_buy_id}")
-                                # client_id = f"{BOT_TAG}_BUY_{now_ts()}"
-                                # if cfg.mode == "LIVE":
-                                #     order = ex.order_limit_maker(cfg.symbol, "BUY", float(qty), float(qprice), client_order_id=client_id)
-                                #     open_buy_id = order.get("orderId")
-                                #     open_buy_cid = client_id
-                                #     open_buy_price = float(qprice)
-                                #     open_buy_ts = now_ts()
-                                #     print(f"BUY LIMIT_MAKER: qty={qty} price={qprice} id={open_buy_id}")
                         else:
                             exec_price = float(qprice)
                             fee = exec_price * float(qty) * fees["maker"]
@@ -267,15 +223,7 @@ def main():
                             open_sell_cid = open_sell_price = open_sell_ts = open_sell_id = None
                     if need_place_s and strat.position.qty > 0:
                         client_id = f"{BOT_TAG}_SELL_{now_ts()}"
-                        #order = ex.order_limit_maker(cfg.symbol, "SELL", strat.position.qty, float(qprice), client_order_id=client_id)
-                        # SELL normal
-                        order = ex.order_limit_maker(
-                            cfg.symbol,
-                            "SELL",
-                            Decimal(str(strat.position.qty)),
-                            qprice,
-                            client_order_id=client_id,
-                        )
+                        order = ex.order_limit_maker(cfg.symbol, "SELL", strat.position.qty, float(qprice), client_order_id=client_id)
                         open_sell_id = order.get("orderId")
                         open_sell_cid = client_id
                         open_sell_price = float(qprice)
